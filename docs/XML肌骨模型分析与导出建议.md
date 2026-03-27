@@ -51,7 +51,7 @@
 
 - `cfg/run/train_run_legs.yaml` -> `data/xml/legs/myolegs.xml`
 - `cfg/run/train_run_legs_abs.yaml` -> `data/xml/legs_abs/myolegs_abdomen.xml`
-- `cfg/run/train_run_legs_back.yaml` -> `data/xml/legs_back/leg_soccer/myolegs_soccer.xml`
+- `cfg/run/train_run_legs_back.yaml` -> `data/xml/legs_back/leg/myolegs.xml`
 
 所以如果你后面要“搭完整模型并修改”，优先应该从这 3 条入口链路开始理解。
 
@@ -178,7 +178,7 @@ data/xml/legs_back/leg_soccer/myolegs_soccer.xml
 
 | 文件 | 内容分析 | 作用 |
 | --- | --- | --- |
-| `data/xml/legs_back/leg_soccer/myolegs_soccer.xml` | 足球任务的主入口，加载头、腿、躯干资产，并在 `root` 下拼接 torso + legs 链。默认不包含球场和足球。 | `legs_back` 当前训练配置默认使用的主模型入口。 |
+| `data/xml/legs_back/leg_soccer/myolegs_soccer.xml` | 足球任务的主入口，加载头、腿、躯干资产，并在 `root` 下拼接 torso + legs 链。默认不包含球场和足球。 | 适合保留给足球任务专用分支，不建议作为 imitation 默认入口。 |
 | `data/xml/legs_back/leg_soccer/myolegs_soccer_goalie.xml` | 在主入口基础上额外引入 `soccer_field.xml` 和 `soccer_ball.xml`。 | 守门 / 真实场景交互测试用。 |
 | `data/xml/legs_back/leg_soccer/myolegs_soccer_grass.xml` | 同类足球场景变体。 | 不同球场展示或接触设置时使用。 |
 | `data/xml/legs_back/leg_soccer/soccer_assets/myohead_simple_assets.xml` | 足球版本头部资产。 | 给 soccer 入口提供头部外形。 |
@@ -380,14 +380,14 @@ my_model_bundle/
 
 这两个文件里仍写着 `data/xml/myolegs.xml`：
 
-- `cfg/run/run.yaml`
-- `cfg/run/t2m.yaml`
+- `cfg/run/train_run_legs.yaml`
+- `cfg/run/play_run_legs.yaml`
 
 但当前仓库里真正存在的是：
 
 - `data/xml/legs/myolegs.xml`
 - `data/xml/legs_abs/myolegs_abdomen.xml`
-- `data/xml/legs_back/leg_soccer/myolegs_soccer.xml`
+- `data/xml/legs_back/leg/myolegs.xml`
 
 所以你后面如果直接复用旧配置，需要先修正 `xml_path`。
 

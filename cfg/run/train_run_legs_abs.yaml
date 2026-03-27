@@ -18,7 +18,6 @@ xml_path: "data/xml/legs_abs/myolegs_abdomen.xml"
 motion_file: "data/kit_train_motion_dict.pkl"
 smpl_data_dir: "data/smpl"
 initial_pose_file: "data/initial_pose/legs_abs/initial_pose_train.pkl"
-expert_path: ""
 
 recording_biomechanics: False
 deactivate_muscles: False

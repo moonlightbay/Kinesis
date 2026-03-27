@@ -18,9 +18,7 @@ import psutil
 os.environ["OMP_NUM_THREADS"] = "1"
 
 from src.agents.agent_ppo import AgentPPO
-from src.learning.policy_gaussian import PolicyGaussian
 from src.learning.policy_lattice import PolicyLattice
-from src.learning.policy_moe import PolicyMOE, PolicyMOEWithPrev
 from src.learning.critic import Value
 from src.learning.mlp import MLP
 from src.learning.learning_utils import to_device, to_cpu, get_optimizer
@@ -66,8 +64,8 @@ class AgentHumanoid(AgentPPO, ABC):
             env=self.env,
             dtype=dtype,
             device=device,
-            mean_action=cfg.test,
-            headless=not cfg.headless,
+            mean_action=cfg.run.test,
+            headless=cfg.run.headless,
             num_threads=cfg.run.num_threads,
             policy_net=self.policy_net,
             value_net=self.value_net,
@@ -100,7 +98,7 @@ class AgentHumanoid(AgentPPO, ABC):
         )
         logger.info(f"State_dim: {self.state_dim}")
         logger.info(f"Action_dim: {self.action_dim}")
-        logger.info(f"Actor Type: {self.cfg.learning.actor_type}")
+        logger.info("Policy: PolicyLattice")
         logger.info("============================================================")
 
     @abstractmethod
@@ -109,37 +107,14 @@ class AgentHumanoid(AgentPPO, ABC):
 
     def setup_policy(self) -> None:
         """
-        Initialize the policy network based on the configuration.
-        Supports various policy architectures.
+        Initialize the single-expert imitation policy.
         """
         self.state_dim = state_dim = self.env.observation_space.shape[0]
         self.action_dim = action_dim = self.env.action_space.shape[0]
 
-        if self.cfg.learning.actor_type == "gauss":
-            self.policy_net = PolicyGaussian(
-                self.cfg, action_dim=action_dim, state_dim=state_dim
-            )
-        elif self.cfg.learning.actor_type == "lattice":
-            self.policy_net = PolicyLattice(
-                self.cfg, action_dim=action_dim, latent_dim=512, state_dim=state_dim
-            )
-        elif self.cfg.learning.actor_type == "moe":
-            self.policy_net = PolicyMOE(
-                self.cfg, action_dim=action_dim, state_dim=state_dim
-            )
-        elif self.cfg.learning.actor_type == "moe_finetune":
-            self.policy_net = PolicyMOE(
-                self.cfg, action_dim=action_dim, state_dim=state_dim, freeze=False
-            )
-        elif self.cfg.learning.actor_type == "moe_with_prev":
-            self.policy_net = PolicyMOEWithPrev(
-                self.cfg, action_dim=action_dim, state_dim=state_dim
-            )
-        else:
-            raise ValueError(
-                f"Unknown actor type: {self.cfg.learning.actor_type}. "
-                "Supported types are: gauss, lattice, moe, moe_finetune, moe_with_prev."
-            )
+        self.policy_net = PolicyLattice(
+            self.cfg, action_dim=action_dim, latent_dim=512, state_dim=state_dim
+        )
 
         to_device(self.device, self.policy_net)
 
@@ -401,27 +376,10 @@ class AgentHumanoid(AgentPPO, ABC):
                 while True:
                     obs_dict, info = self.env.reset()
                     state = self.preprocess_obs(obs_dict)
-                    expert_idx = torch.tensor(0, device=self.device)  # Initialize expert index
                     for t in range(10000):
-                        if isinstance(self.policy_net, PolicyMOE):
-                            actions, expert_idx = self.policy_net.select_action(
-                                torch.from_numpy(state).to(self.dtype), True
-                            )
-                            actions = actions[0].numpy()
-                        elif isinstance(self.policy_net, PolicyMOEWithPrev):
-                            expert_idx_oh = torch.nn.functional.one_hot(
-                                expert_idx, num_classes=self.cfg.num_experts
-                            ).float()
-                            actions, expert_idx = self.policy_net.select_action(
-                                torch.from_numpy(state).to(self.dtype),
-                                expert_idx_oh,
-                                True,
-                            )
-                            actions = actions[0].numpy()
-                        else:
-                            actions = self.policy_net.select_action(
-                                torch.from_numpy(state).to(self.dtype), True
-                            )[0].numpy()
+                        actions = self.policy_net.select_action(
+                            torch.from_numpy(state).to(self.dtype), True
+                        )[0].numpy()
 
                         next_obs, reward, terminated, truncated, info = self.env.step(
                             self.preprocess_actions(actions)

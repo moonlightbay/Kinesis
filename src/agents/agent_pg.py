@@ -13,7 +13,6 @@ from typing import Optional
 import torch
 import logging
 
-from src.learning.policy_moe import PolicyMOEWithPrev
 from src.learning.learning_utils import to_train, to_test
 from src.learning.learning_utils import estimate_advantages
 from src.agents.agent import Agent
@@ -83,7 +82,6 @@ class AgentPG(Agent):
         returns: torch.Tensor,
         advantages: torch.Tensor,
         exps: torch.Tensor,
-        expert_indices: Optional[torch.Tensor] = None
     ) -> dict:
         """
         Update the policy network using advantage-weighted log probabilities.
@@ -94,7 +92,6 @@ class AgentPG(Agent):
             returns (torch.Tensor): Tensor of target returns.
             advantages (torch.Tensor): Tensor of advantage estimates.
             exps (torch.Tensor): Tensor indicating exploration flags.
-            expert_indices (Optional[torch.Tensor]): Tensor of expert indices for actions, if applicable.
 
         Returns:
             dict: Dictionary containing training metrics.
@@ -109,19 +106,7 @@ class AgentPG(Agent):
             value_loss_val += self.update_value(states, returns)
 
             # Calculate log probabilities of selected actions
-            if isinstance(self.policy_net, PolicyMOEWithPrev):
-                prev_expert_indices = torch.cat(
-                (torch.zeros(1, dtype=torch.int64).to(self.device), expert_indices[ind][:-1]),
-                dim=0
-                )
-                prev_expert_indices = torch.nn.functional.one_hot(
-                    prev_expert_indices, num_classes=self.cfg.num_experts
-                ).float()
-                log_probs = self.policy_net.get_log_prob(states[ind], prev_expert_indices, expert_indices[ind])
-            elif expert_indices is not None:
-                log_probs = self.policy_net.get_log_prob(states[ind], expert_indices[ind])
-            else:
-                log_probs = self.policy_net.get_log_prob(states[ind], actions[ind])
+            log_probs = self.policy_net.get_log_prob(states[ind], actions[ind])
 
             # Calculate the loss as the negative log probability times the advantage
             policy_loss = -(log_probs * advantages[ind]).mean()
@@ -165,10 +150,6 @@ class AgentPG(Agent):
         rewards = torch.from_numpy(batch.rewards).to(self.dtype).to(self.device)
         masks = torch.from_numpy(batch.masks).to(self.dtype).to(self.device)
         exps = torch.from_numpy(batch.exps).to(self.dtype).to(self.device)
-        if hasattr(self.policy_net, "experts"):
-            expert_indices = torch.from_numpy(batch.expert_indices).to(self.dtype).to(self.device)
-        else:
-            expert_indices = None
 
         # Compute value estimates for the states without gradient tracking
         with to_test(*self.update_modules):
@@ -180,7 +161,7 @@ class AgentPG(Agent):
             rewards, masks, values, self.gamma, self.tau
         )
 
-        metrics = self.update_policy(states, actions, returns, advantages, exps, expert_indices)
+        metrics = self.update_policy(states, actions, returns, advantages, exps)
         metrics["update_time"] = time.time() - t0
 
         return metrics

@@ -1,11 +1,5 @@
-# Always set to agent_im
-agent_name: "agent_im"
-
 # Main training loop max epoch
 max_epoch: 100000000
-
-# RL policy type
-actor_type: "moe"
 
 # PPO steps per epoch
 opt_num_epochs: 10
@@ -21,9 +15,6 @@ save_curr_frequency: 50
 
 # Model save frequency
 save_frequency: 1000
-
-# Termination history flag
-resume_history: True
 
 # Dynamic std flag
 fix_std: False
@@ -60,13 +51,3 @@ mlp:
     name: default
   regularizer:
     name: None
-
-composer:
-  units: [1024, 512]
-  activation: silu
-
-moe:
-  units: [1024, 512, 256]
-  activation: silu
-
-masking_prob: 0.0

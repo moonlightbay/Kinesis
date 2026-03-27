@@ -26,7 +26,6 @@ import torch.multiprocessing as multiprocessing
 
 import gymnasium as gym
 
-from src.learning.policy_moe import PolicyMOE, PolicyMOEWithPrev
 from src.learning.memory import Memory
 from src.learning.trajbatch import TrajBatch
 from src.learning.logger_rl import LoggerRL
@@ -248,7 +247,6 @@ class Agent:
                     # logger.debug(f"Worker {pid} resetting environment")
                     obs_dict, info = self.env.reset()
                     state = self.preprocess_obs(obs_dict)
-                    expert_idx = torch.tensor(0, dtype=torch.int64)  # Initialize expert index
                     
                     rl_logger.start_episode(self.env)
                     episode_count += 1
@@ -267,23 +265,9 @@ class Agent:
                         
                         # Policy action selection
                         state_tensor = torch.from_numpy(state).to(self.dtype)
-                        if isinstance(self.policy_net, PolicyMOE):
-                            actions, expert_idx = self.policy_net.select_action(
-                                torch.from_numpy(state).to(self.dtype), True
-                            )
-                            actions = actions[0].numpy()
-                        elif isinstance(self.policy_net, PolicyMOEWithPrev):
-                            expert_idx_oh = torch.nn.functional.one_hot(
-                                expert_idx, num_classes=self.cfg.num_experts
-                            ).float()
-                            actions, expert_idx = self.policy_net.select_action(
-                                torch.from_numpy(state).to(self.dtype),
-                                expert_idx_oh,
-                                True,
-                            )
-                            actions = actions[0].numpy()
-                        else:
-                            actions = self.policy_net.select_action(state_tensor, mean_action)[0].numpy()
+                        actions = self.policy_net.select_action(
+                            state_tensor, mean_action
+                        )[0].numpy()
                         
                         # Environment step
                         processed_actions = self.preprocess_actions(actions)
@@ -297,27 +281,15 @@ class Agent:
                         mask = 0 if episode_done else 1
                         exp = 1 - mean_action
                         
-                        if hasattr(self.policy_net, "experts"):
-                            self.push_memory(
-                                memory,
-                                state.squeeze(),
-                                actions,
-                                mask,
-                                next_state.squeeze(),
-                                reward,
-                                exp,
-                                expert_idx.item()
-                            )
-                        else:
-                            self.push_memory(
-                                memory,
-                                state.squeeze(),
-                                actions,
-                                mask,
-                                next_state.squeeze(),
-                                reward,
-                                exp,
-                            )
+                        self.push_memory(
+                            memory,
+                            state.squeeze(),
+                            actions,
+                            mask,
+                            next_state.squeeze(),
+                            reward,
+                            exp,
+                        )
 
                         if pid == 0 and not self.headless:
                             self.env.render()
@@ -362,14 +334,16 @@ class Agent:
     def sample(self, min_batch_size: int):
         """Sample with comprehensive debugging"""
 
-        os.system("rm -rf /dev/shm/torch_*")
-
         import psutil
-        shm = psutil.disk_usage('/dev/shm')
-        self.main_logger.info(f"Shared memory usage before sampling: {shm.percent}%")
-        if shm.percent > 80:
-            os.system("rm -rf /dev/shm/*")
-            self.main_logger.warning("Shared memory usage was high, cleared /dev/shm")
+        if os.name != "nt" and os.path.exists("/dev/shm"):
+            os.system("rm -rf /dev/shm/torch_*")
+            shm = psutil.disk_usage("/dev/shm")
+            self.main_logger.info(
+                f"Shared memory usage before sampling: {shm.percent}%"
+            )
+            if shm.percent > 80:
+                os.system("rm -rf /dev/shm/*")
+                self.main_logger.warning("Shared memory usage was high, cleared /dev/shm")
 
         self.main_logger.info(f"Starting sampling with {self.num_threads} threads")
         monitor_resources(self.main_logger, 'main', 'SAMPLE_START')
@@ -425,10 +399,7 @@ class Agent:
                 monitor_proc.join(timeout=5)
 
                 # Merge results
-                if hasattr(self.policy_net, "experts"):
-                    traj_batch = self.traj_cls(memories, has_expert_idx=True)
-                else:
-                    traj_batch = self.traj_cls(memories)
+                traj_batch = self.traj_cls(memories)
                 logger = self.logger_rl_cls.merge(loggers)
 
         logger.sample_time = time.time() - t_start
@@ -534,12 +505,8 @@ class Agent:
         next_state: np.ndarray,
         reward: float,
         exploration_flag: float,
-        expert_idx: Optional[int] = None
     ) -> None:
-        if expert_idx is not None:
-            memory.push(state, action, mask, next_state, reward, exploration_flag, expert_idx)
-        else:
-            memory.push(state, action, mask, next_state, reward, exploration_flag)
+        memory.push(state, action, mask, next_state, reward, exploration_flag)
 
     def pre_sample(self):
         pass

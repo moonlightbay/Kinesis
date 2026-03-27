@@ -21,7 +21,7 @@ import torch
 import numpy as np
 import wandb
 
-from src.agents import agent_dict
+from src.agents import AgentIM
 from omegaconf import DictConfig, OmegaConf
 
 import hydra
@@ -39,7 +39,7 @@ def main(cfg: DictConfig) -> None:
     cfg.output_dir = hydra.core.hydra_config.HydraConfig.get().runtime.output_dir
 
     if (not cfg.no_log) and (not cfg.run.test):
-        group = cfg.get("group", cfg.learning.agent_name)
+        group = cfg.get("group", "agent_im")
         wandb.init(
             project=cfg.project,
             group=group,
@@ -65,20 +65,16 @@ def main(cfg: DictConfig) -> None:
     np.random.seed(cfg.seed)
     torch.manual_seed(cfg.seed)
 
-    if cfg.learning.actor_type not in  ["moe", "moe_with_prev"]:
-        torch.backends.cudnn.deterministic = True
-        torch.backends.cudnn.benchmark = False
-        torch.use_deterministic_algorithms(True)
+    torch.backends.cudnn.deterministic = True
+    torch.backends.cudnn.benchmark = False
+    torch.use_deterministic_algorithms(True)
 
-    agent = agent_dict[cfg.learning.agent_name](
-        cfg, dtype, device, training=True, checkpoint_epoch=cfg.epoch
-    )
+    agent = AgentIM(cfg, dtype, device, training=True, checkpoint_epoch=cfg.epoch)
 
     if cfg.run.test:
         if cfg.run.im_eval:
             agent.eval_policy(epoch=cfg.epoch)
         else:
-            cfg.num_threads = 1
             agent.run_policy()
     else:
         # breakpoint()

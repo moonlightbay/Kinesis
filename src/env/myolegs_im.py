@@ -295,7 +295,7 @@ class MyoLegsIm(MyoLegsTask):
                 "device": torch.device("cpu"),
                 "min_length": -1,
                 "max_length": -1,
-                "multi_thread": True if self.cfg.num_threads > 1 else False,
+                "multi_thread": True if self.cfg.run.num_threads > 1 else False,
                 "smpl_type": "smpl",
                 "randomize_heading": not self.test,
             }

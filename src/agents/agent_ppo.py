@@ -14,7 +14,6 @@ from typing import List, Optional, Tuple
 import numpy as np
 import torch
 
-from src.learning.policy_moe import PolicyMOEWithPrev
 from src.learning.learning_utils import to_test
 from src.agents.agent_pg import AgentPG
 
@@ -59,7 +58,6 @@ class AgentPPO(AgentPG):
         returns: torch.Tensor,
         advantages: torch.Tensor,
         exps: torch.Tensor,
-        expert_indices: Optional[torch.Tensor] = None
     ) -> dict:
         """
         Update the policy network using PPO's clipped surrogate objective.
@@ -70,7 +68,6 @@ class AgentPPO(AgentPG):
             returns (torch.Tensor): Tensor of target returns.
             advantages (torch.Tensor): Tensor of advantage estimates.
             exps (torch.Tensor): Tensor indicating exploration flags.
-            expert_indices (Optional[torch.Tensor]): Tensor of expert indices for actions, if applicable.
 
         Returns:
             dict: Dictionary containing training metrics.
@@ -79,19 +76,6 @@ class AgentPPO(AgentPG):
         # Compute log proabilities of the actions under the current policy
         with to_test(*self.update_modules):
             with torch.no_grad():
-                if isinstance(self.policy_net, PolicyMOEWithPrev):
-                    # For PolicyMOEWithPrev, we need to pass the previous expert index
-                    
-                    # Roll the expert indices forward one step and add a zero for the first step
-                    prev_expert_indices = torch.cat(
-                        (torch.zeros(1, dtype=torch.int64).to(self.device), expert_indices[:-1].long().clamp(0, self.cfg.num_experts - 1)),
-                        dim=0
-                    )
-                    # Transform to one-hot encoding
-                    prev_expert_indices = torch.nn.functional.one_hot(
-                        prev_expert_indices, num_classes=self.cfg.num_experts
-                    ).float()
-
                 # Compute fixed_log_probs in chunks to avoid OOM
                 chunk_size = 4096
                 fixed_log_probs_list = []
@@ -101,16 +85,9 @@ class AgentPPO(AgentPG):
                     end = min(i + chunk_size, num_samples)
                     states_chunk = states[i:end]
                     actions_chunk = actions[i:end]
-                    
-                    if isinstance(self.policy_net, PolicyMOEWithPrev):
-                        prev_expert_indices_chunk = prev_expert_indices[i:end]
-                        expert_indices_chunk = expert_indices[i:end]
-                        fixed_log_probs_chunk = self.policy_net.get_log_prob(states_chunk, prev_expert_indices_chunk, expert_indices_chunk)
-                    elif expert_indices is not None:
-                        expert_indices_chunk = expert_indices[i:end]
-                        fixed_log_probs_chunk = self.policy_net.get_log_prob(states_chunk, expert_indices_chunk)
-                    else:
-                        fixed_log_probs_chunk = self.policy_net.get_log_prob(states_chunk, actions_chunk)
+                    fixed_log_probs_chunk = self.policy_net.get_log_prob(
+                        states_chunk, actions_chunk
+                    )
                     
                     fixed_log_probs_list.append(fixed_log_probs_chunk)
                 
@@ -190,7 +167,7 @@ class AgentPPO(AgentPG):
                         ind_chunk = ind[i:end]
                         
                         surr_loss_chunk, clip_frac_chunk = self.ppo_loss(
-                            states, actions, advantages, fixed_log_probs, ind_chunk, expert_indices
+                            states, actions, advantages, fixed_log_probs, ind_chunk
                         )
                         
                         # Scale loss by chunk size / total size for correct mean gradient
@@ -236,7 +213,6 @@ class AgentPPO(AgentPG):
         advantages: torch.Tensor,
         fixed_log_probs: torch.Tensor,
         ind: torch.Tensor,
-        expert_indices: Optional[torch.Tensor] = None
     ) -> Tuple[torch.Tensor, float]:
         """
         Calculate the PPO surrogate loss.
@@ -247,25 +223,11 @@ class AgentPPO(AgentPG):
             advantages (torch.Tensor): Tensor of advantage estimates.
             fixed_log_probs (torch.Tensor): Tensor of log probabilities under the old policy.
             ind (torch.Tensor): Tensor of indices indicating active exploration flags.
-            expert_indices (Optional[torch.Tensor]): Tensor of expert indices for actions, if applicable.
 
         Returns:
             Tuple[torch.Tensor, float]: Computed PPO surrogate loss and clip fraction.
         """
-        if isinstance(self.policy_net, PolicyMOEWithPrev):
-            # For PolicyMOEWithPrev, we need to pass the previous expert index
-            prev_expert_indices = torch.cat(
-                (torch.zeros(1, dtype=torch.int64).to(self.device), expert_indices[ind][:-1]),
-                dim=0
-            )
-            prev_expert_indices = torch.nn.functional.one_hot(
-                prev_expert_indices.long().clamp(0, self.cfg.num_experts - 1), num_classes=self.cfg.num_experts
-            ).float()
-            log_probs = self.policy_net.get_log_prob(states[ind], prev_expert_indices, expert_indices[ind])
-        elif expert_indices is not None:
-            log_probs = self.policy_net.get_log_prob(states[ind], expert_indices[ind])
-        else:
-            log_probs = self.policy_net.get_log_prob(states[ind], actions[ind])
+        log_probs = self.policy_net.get_log_prob(states[ind], actions[ind])
         ratio = torch.exp(log_probs - fixed_log_probs[ind])
         advantages = advantages[ind]
         surr1 = ratio * advantages

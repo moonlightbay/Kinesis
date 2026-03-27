@@ -15,7 +15,6 @@ import logging
 
 os.environ["OMP_NUM_THREADS"] = "1"
 
-from src.learning.policy_moe import PolicyMOE, PolicyMOEWithPrev
 from src.agents.agent_humanoid import AgentHumanoid
 from src.learning.learning_utils import to_test, to_cpu
 from src.env.myolegs_im import MyoLegsIm
@@ -156,28 +155,10 @@ class AgentIM(AgentHumanoid):
         with to_cpu(*self.sample_modules), torch.no_grad():
             obs_dict, info = self.env.reset()
             state = self.preprocess_obs(obs_dict)
-            expert_idx = torch.tensor(0, dtype=torch.int64).to(self.device)  # Initialize expert index
             for t in range(10000):
-                if isinstance(self.policy_net, PolicyMOE):
-                            actions, expert_idx = self.policy_net.select_action(
-                                torch.from_numpy(state).to(self.dtype), True
-                            )
-                            actions = actions[0].numpy()
-                elif isinstance(self.policy_net, PolicyMOEWithPrev):
-                    expert_idx_oh = torch.nn.functional.one_hot(
-                        expert_idx, num_classes=self.cfg.num_experts
-                    ).float()
-                    actions, expert_idx = self.policy_net.select_action(
-                        torch.from_numpy(state).to(self.dtype),
-                        expert_idx_oh,
-                        True,
-                    )
-                    actions = actions[0].numpy()
-                else:
-                    # For non-MoE policies, select action directly
-                    actions = self.policy_net.select_action(
-                        torch.from_numpy(state).to(self.dtype), True
-                    )[0].numpy()
+                actions = self.policy_net.select_action(
+                    torch.from_numpy(state).to(self.dtype), True
+                )[0].numpy()
                 next_obs, reward, terminated, truncated, info = self.env.step(
                     self.preprocess_actions(actions)
                 )
